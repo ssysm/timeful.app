@@ -110,6 +110,7 @@ func main() {
 
 	// Init routes
 	apiRouter := router.Group("/api")
+	routes.InitHealth(apiRouter)
 	routes.InitAuth(apiRouter)
 	routes.InitUser(apiRouter)
 	routes.InitEvents(apiRouter)
@@ -118,22 +119,30 @@ func main() {
 	routes.InitFolders(apiRouter)
 	slackbot.InitSlackbot(apiRouter)
 
-	// Get frontend path
+	// Get frontend path - skip if SKIP_FRONTEND_SERVE is set (e.g., in Docker where nginx serves frontend)
 	frontendPath := "../frontend/dist"
-	err = filepath.WalkDir(frontendPath, func(path string, d fs.DirEntry, err error) error {
-		if !d.IsDir() && d.Name() != "index.html" {
-			split := splitPath(path)
-			newPath := filepath.Join(split[3:]...)
-			router.StaticFile(fmt.Sprintf("/%s", newPath), path)
+	if os.Getenv("SKIP_FRONTEND_SERVE") != "true" {
+		err = filepath.WalkDir(frontendPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && d.Name() != "index.html" {
+				split := splitPath(path)
+				newPath := filepath.Join(split[3:]...)
+				router.StaticFile(fmt.Sprintf("/%s", newPath), path)
+			}
+			return nil
+		})
+		if err != nil {
+			// In Docker mode, frontend is served by nginx, so this is not fatal
+			fmt.Printf("[WARN] Could not load frontend static files: %s\n", err)
+		} else {
+			router.LoadHTMLFiles(filepath.Join(frontendPath, "index.html"))
+			router.NoRoute(noRouteHandler())
 		}
-		return nil
-	})
-	if err != nil {
-		log.Fatalf("failed to walk directories: %s", err)
+	} else {
+		fmt.Println("[INFO] Skipping frontend serving (SKIP_FRONTEND_SERVE=true)")
 	}
-
-	router.LoadHTMLFiles(filepath.Join(frontendPath, "index.html"))
-	router.NoRoute(noRouteHandler())
 
 	// Init swagger documentation
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
@@ -148,9 +157,12 @@ func main() {
 
 // Load .env variables
 func loadDotEnv() {
+	// Try to load .env file, but don't panic if it doesn't exist
+	// (in Docker, env vars are passed directly via docker-compose)
 	err := godotenv.Load(".env")
 	if err != nil {
-		logger.StdErr.Panicln("Error loading .env file")
+		// Only log warning, don't panic - env vars may be set directly
+		fmt.Println("[INFO] .env file not found, using environment variables directly")
 	}
 
 	// Load stripe key

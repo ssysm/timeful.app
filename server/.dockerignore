@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.md
+.DS_Store
+.vscode
+.idea
+*.log
+logs.log
+# Exclude binary artifacts
+server
+*.exe
+# Test files
+*_test.go
+# Note: docs/ is required for swagger - do not exclude it
