@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="show && !isPhone"
+    v-if="show && !isPhone && !selfHostedMode"
     class="tw-relative tw-bg-[#1A1A1E] tw-px-8 tw-py-3 tw-text-center tw-text-sm tw-text-white"
   >
     <div
@@ -34,6 +34,7 @@
 
 <script>
 import { isPhone } from "@/utils"
+import { mapState } from "vuex"
 export default {
   name: "DiscordBanner",
 
@@ -45,6 +46,7 @@ export default {
   },
 
   computed: {
+    ...mapState(["selfHostedMode"]),
     isPhone() {
       return isPhone(this.$vuetify)
     },

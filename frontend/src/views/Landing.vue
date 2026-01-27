@@ -11,8 +11,10 @@
           <v-spacer />
 
           <LandingPageHeader>
-            <v-btn text @click="openHowItWorksDialog">How it works</v-btn>
-            <v-btn text href="/blog">Blog</v-btn>
+            <template v-if="!selfHostedMode">
+              <v-btn text @click="openHowItWorksDialog">How it works</v-btn>
+              <v-btn text href="/blog">Blog</v-btn>
+            </template>
             <div v-if="authUser" class="tw-ml-2">
               <AuthUserMenu />
             </div>
@@ -31,6 +33,7 @@
             class="tw-mb-4 tw-flex tw-select-none tw-items-center tw-rounded-full tw-border tw-border-light-gray-stroke tw-bg-white/70 tw-px-2.5 tw-py-1.5 tw-text-sm tw-text-dark-gray"
           >
             We're open source!
+            <span v-if="selfHostedMode" class="tw-mx-2"> I'm even a Self-Hosted Instance!</span>
             <github-button
               v-once
               class="-tw-mb-1 tw-ml-2"
@@ -88,7 +91,7 @@
             v-if="!authUser"
             class="tw-text-center tw-text-xs tw-text-dark-gray sm:tw-text-sm"
           >
-            It's free! No login required.
+            It's free! <span v-if="!selfHostedMode">No login required.</span>
           </div>
         </div>
         <div class="tw-relative tw-w-full">
@@ -133,6 +136,7 @@
 
     <!-- How it works -->
     <div
+      v-if="!selfHostedMode"
       id="how-it-works"
       class="tw-grid tw-place-content-center tw-px-4 tw-pt-12"
     >
@@ -170,6 +174,7 @@
 
     <!-- Video -->
     <div
+      v-if="!selfHostedMode"
       class="tw-flex tw-justify-center tw-bg-green tw-px-4 tw-pb-12 tw-pt-24 md:tw-pb-16"
     >
       <div
@@ -188,7 +193,7 @@
     </div>
 
     <!-- Reddit Testimonials -->
-    <div class="tw-flex tw-justify-center tw-bg-light-gray tw-py-12">
+    <div v-if="!selfHostedMode" class="tw-flex tw-justify-center tw-bg-light-gray tw-py-12">
       <div class="tw-mx-4 tw-max-w-3xl tw-flex-1 sm:tw-mx-16">
         <div class="tw-text-center">
           <Header> People love us on Reddit! </Header>
@@ -237,7 +242,7 @@
     </div>
 
     <!-- FAQ -->
-    <div class="tw-flex tw-justify-center tw-pt-12">
+    <div v-if="!selfHostedMode" class="tw-flex tw-justify-center tw-pt-12">
       <div class="tw-mx-4 tw-mb-12 tw-max-w-3xl tw-flex-1 sm:tw-mx-16">
         <div id="faq-section" class="tw-text-center lg:tw-pt-3">
           <Header> Frequently Asked Questions </Header>
@@ -447,7 +452,7 @@ export default {
   }),
 
   computed: {
-    ...mapState(["authUser"]),
+    ...mapState(["authUser", "selfHostedMode"]),
     isPhone() {
       return isPhone(this.$vuetify)
     },

@@ -111,11 +111,17 @@ func main() {
 	// Init routes
 	apiRouter := router.Group("/api")
 	routes.InitHealth(apiRouter)
+	routes.InitConfig(apiRouter)
 	routes.InitAuth(apiRouter)
 	routes.InitUser(apiRouter)
 	routes.InitEvents(apiRouter)
 	routes.InitAnalytics(apiRouter)
-	routes.InitStripe(apiRouter)
+	// Skip Stripe routes in self-hosted mode
+	if os.Getenv("SELF_HOSTED_MODE") != "true" {
+		routes.InitStripe(apiRouter)
+	} else {
+		fmt.Println("[INFO] Self-hosted mode enabled, Stripe routes disabled")
+	}
 	routes.InitFolders(apiRouter)
 	slackbot.InitSlackbot(apiRouter)
 
@@ -165,8 +171,10 @@ func loadDotEnv() {
 		fmt.Println("[INFO] .env file not found, using environment variables directly")
 	}
 
-	// Load stripe key
-	stripe.Key = os.Getenv("STRIPE_API_KEY")
+	// Load stripe key (skip in self-hosted mode)
+	if os.Getenv("SELF_HOSTED_MODE") != "true" {
+		stripe.Key = os.Getenv("STRIPE_API_KEY")
+	}
 
 	// Validate session secret
 	validateSessionSecret()

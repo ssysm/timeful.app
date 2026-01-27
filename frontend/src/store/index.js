@@ -23,6 +23,11 @@ export default new Vuex.Store({
     folders: [],
 
     featureFlagsLoaded: false,
+    configLoaded: false,
+
+    // Self-hosted mode settings
+    selfHostedMode: process.env.VUE_APP_SELF_HOSTED_MODE === "true",
+    requireAuthForEvents: false,
 
     // Feature flags
     groupsEnabled: true,
@@ -50,6 +55,10 @@ export default new Vuex.Store({
   },
   getters: {
     isPremiumUser(state) {
+      // In self-hosted mode, all users are treated as premium
+      if (state.selfHostedMode) {
+        return true
+      }
       return isPremiumUser(state.authUser)
     },
   },
@@ -92,6 +101,15 @@ export default new Vuex.Store({
     },
     setEnablePaywall(state, enabled) {
       state.enablePaywall = enabled
+    },
+    setSelfHostedMode(state, enabled) {
+      state.selfHostedMode = enabled
+    },
+    setRequireAuthForEvents(state, enabled) {
+      state.requireAuthForEvents = enabled
+    },
+    setConfigLoaded(state, loaded) {
+      state.configLoaded = loaded
     },
     setUpgradeDialogVisible(state, visible) {
       state.upgradeDialogVisible = visible
@@ -167,7 +185,9 @@ export default new Vuex.Store({
       { state, getters, commit, dispatch },
       { eventOnly = false, folderId = null }
     ) {
+      // Skip paywall in self-hosted mode
       if (
+        !state.selfHostedMode &&
         state.enablePaywall &&
         !getters.isPremiumUser &&
         state.authUser?.numEventsCreated >= numFreeEvents
@@ -278,6 +298,25 @@ export default new Vuex.Store({
       commit("setUpgradeDialogVisible", false)
       commit("setUpgradeDialogType", null)
       commit("setUpgradeDialogData", null)
+    },
+    async fetchConfig({ commit }) {
+      try {
+        const config = await get("/config")
+        commit("setSelfHostedMode", config.selfHostedMode)
+        commit("setRequireAuthForEvents", config.requireAuthForEvents)
+        // Disable paywall in self-hosted mode
+        if (config.selfHostedMode) {
+          commit("setEnablePaywall", false)
+        }
+      } catch (e) {
+        // Fallback to env var
+        const selfHosted = process.env.VUE_APP_SELF_HOSTED_MODE === "true"
+        commit("setSelfHostedMode", selfHosted)
+        if (selfHosted) {
+          commit("setEnablePaywall", false)
+        }
+      }
+      commit("setConfigLoaded", true)
     },
   },
   modules: {},

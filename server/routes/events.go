@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/sessions"
@@ -90,6 +91,13 @@ func createEvent(c *gin.Context) {
 	// If user logged in, set owner id to their user id, otherwise set owner id to nil
 	userIdInterface := session.Get("userId")
 	userId, signedIn := userIdInterface.(string)
+
+	// If REQUIRE_AUTH_FOR_EVENTS is enabled, require authentication to create events
+	if os.Getenv("REQUIRE_AUTH_FOR_EVENTS") == "true" && !signedIn {
+		c.JSON(http.StatusUnauthorized, responses.Error{Error: errs.NotSignedIn})
+		return
+	}
+
 	var user *models.User
 	var ownerId primitive.ObjectID
 	if signedIn {
@@ -624,6 +632,13 @@ func updateEventResponse(c *gin.Context) {
 		c.JSON(http.StatusNotFound, responses.Error{Error: errs.EventNotFound})
 		return
 	}
+
+	// If REQUIRE_AUTH_FOR_EVENTS is enabled, block guest responses
+	if os.Getenv("REQUIRE_AUTH_FOR_EVENTS") == "true" && *payload.Guest {
+		c.JSON(http.StatusUnauthorized, responses.Error{Error: errs.NotSignedIn})
+		return
+	}
+
 	eventResponses := db.GetEventResponses(event.Id.Hex())
 
 	var userIdString string

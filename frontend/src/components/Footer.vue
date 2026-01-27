@@ -16,6 +16,7 @@
               class="tw-text-white tw-underline"
               >@jonathanzliu</a
             >
+            <span v-if="selfHostedMode"> on a Self-Hosted Instance!</span>
           </div>
           <div class="tw-mb-6 tw-flex tw-items-center tw-space-x-3">
             <a href="https://x.com/timeful_app" aria-label="X" target="_blank">
@@ -71,7 +72,7 @@
             </a>
           </div>
           <div class="tw-flex tw-flex-col tw-gap-2">
-            <router-link :to="{ name: 'privacy-policy' }" class="tw-text-sm">
+            <router-link v-if="!selfHostedMode" :to="{ name: 'privacy-policy' }" class="tw-text-sm">
               Privacy Policy
             </router-link>
             <router-link :to="{ name: 'cookie-settings' }" class="tw-text-sm">
@@ -80,7 +81,7 @@
           </div>
         </div>
         <!-- Links -->
-        <div class="tw-flex tw-flex-col tw-gap-2">
+        <div v-if="!selfHostedMode" class="tw-flex tw-flex-col tw-gap-2">
           <div class="tw-mb-1 tw-font-bold">Links</div>
           <div>
             <a href="/blog" class="tw-text-sm">Blog</a>
@@ -116,7 +117,7 @@
           </div>
         </div>
         <!-- Articles -->
-        <div class="tw-flex tw-flex-col tw-gap-2">
+        <div v-if="!selfHostedMode" class="tw-flex tw-flex-col tw-gap-2">
           <div class="tw-mb-1 tw-font-bold">Articles</div>
           <div>
             <a href="/blog/schej-is-now-timeful/" class="tw-text-sm"
@@ -143,7 +144,7 @@
           </div>
         </div>
         <!-- Reddit posts -->
-        <div class="tw-flex tw-flex-col tw-gap-2">
+        <div v-if="!selfHostedMode" class="tw-flex tw-flex-col tw-gap-2">
           <div class="tw-mb-1 tw-font-bold">Reddit posts</div>
           <div>
             <a
@@ -180,7 +181,7 @@ a:hover {
 </style>
 
 <script>
-import { mapActions } from "vuex"
+import { mapActions, mapState } from "vuex"
 
 export default {
   name: "Footer",
@@ -190,6 +191,7 @@ export default {
     }
   },
   computed: {
+    ...mapState(["selfHostedMode"]),
     contractAddressTruncated() {
       return (
         this.contractAddress.slice(0, 6) +

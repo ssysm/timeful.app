@@ -10,17 +10,24 @@ import VueMeta from "vue-meta"
 import { initializeGTMConsent, hasAnalyticsConsent } from "./utils/cookie_utils"
 import "./index.css"
 
-initializeGTMConsent()
+const selfHostedMode = process.env.VUE_APP_SELF_HOSTED_MODE === "true"
 
-// Posthog
+// Skip analytics initialization in self-hosted mode
+if (!selfHostedMode) {
+  initializeGTMConsent()
+}
+
+// Posthog (handles self-hosted mode internally)
 Vue.use(posthogPlugin)
 
-// Google Analytics
-Vue.use(VueGtm, {
-  id: "GTM-M677X6V",
-  vueRouter: router,
-  enabled: hasAnalyticsConsent(),
-})
+// Google Analytics - disabled in self-hosted mode
+if (!selfHostedMode) {
+  Vue.use(VueGtm, {
+    id: "GTM-M677X6V",
+    vueRouter: router,
+    enabled: hasAnalyticsConsent(),
+  })
+}
 
 // Site Metadata
 Vue.use(VueMeta)

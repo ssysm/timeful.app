@@ -44,6 +44,7 @@
         </div>
         <div class="tw-flex tw-flex-row tw-items-center tw-gap-2">
           <div
+            v-if="!selfHostedMode"
             @click="convertW2M"
             class="tw-cursor-pointer tw-text-sm tw-font-normal tw-text-dark-gray tw-underline"
           >
@@ -133,7 +134,7 @@ export default {
   },
 
   computed: {
-    ...mapState(["events", "authUser", "groupsEnabled"]),
+    ...mapState(["events", "authUser", "groupsEnabled", "selfHostedMode"]),
     eventsNotEmpty() {
       return this.events.length > 0
     },

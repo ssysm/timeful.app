@@ -44,7 +44,7 @@
             </div>
           </v-btn>
         </div>
-        <div class="tw-text-center tw-text-xs">
+        <div v-if="selfHostedMode" class="tw-text-center tw-text-xs">
           By continuing, you agree to our
           <router-link class="tw-text-blue" :to="{ name: 'privacy-policy' }"
             >privacy policy</router-link

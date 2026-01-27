@@ -20,8 +20,16 @@ import (
 )
 
 var TasksClient *cloudtasks.Client
+var cloudTasksDisabled bool
 
 func InitTasks() func() {
+	// Check if cloud tasks should be disabled
+	if os.Getenv("DISABLE_CLOUD_TASKS") == "true" {
+		cloudTasksDisabled = true
+		fmt.Println("[INFO] Cloud Tasks disabled, email reminders will not be scheduled")
+		return func() {} // No-op cleanup
+	}
+
 	ctx := context.Background()
 
 	var err error
@@ -39,6 +47,11 @@ func InitTasks() func() {
 }
 
 func CreateEmailTask(email string, ownerName string, eventName string, eventId string) []string {
+	// Skip if cloud tasks are disabled
+	if cloudTasksDisabled {
+		return []string{}
+	}
+
 	// Get listmonk url env vars
 	listmonkUrl := os.Getenv("LISTMONK_URL")
 	listmonkUsername := os.Getenv("LISTMONK_USERNAME")
@@ -127,6 +140,11 @@ func CreateEmailTask(email string, ownerName string, eventName string, eventId s
 }
 
 func DeleteEmailTask(taskId string) {
+	// Skip if cloud tasks are disabled
+	if cloudTasksDisabled {
+		return
+	}
+
 	err := TasksClient.DeleteTask(context.Background(), &cloudtaskspb.DeleteTaskRequest{
 		Name: taskId,
 	})

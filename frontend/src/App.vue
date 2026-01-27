@@ -13,6 +13,7 @@
       :folder-id="newDialogOptions.folderId"
     />
     <UpgradeDialog
+      v-if="!selfHostedMode"
       :value="upgradeDialogVisible"
       @input="handleUpgradeDialogInput"
     />
@@ -31,10 +32,18 @@
         </router-link>
         <v-expand-x-transition>
           <span
-            v-if="isPremiumUser"
+            v-if="isPremiumUser && !selfHostedMode"
             class="tw-ml-2 tw-cursor-default tw-rounded-md tw-bg-[linear-gradient(-25deg,#0a483d,#00994c,#126045,#0a483d)] tw-px-2 tw-py-1 tw-text-sm tw-font-semibold tw-text-white tw-opacity-80"
           >
             Premium
+          </span>
+        </v-expand-x-transition>
+        <v-expand-x-transition>
+          <span
+            v-if="selfHostedMode"
+            class="tw-ml-2 tw-cursor-default tw-rounded-md tw-bg-gray-600 tw-px-2 tw-py-1 tw-text-sm tw-font-semibold tw-text-white tw-opacity-80"
+          >
+            Self-Hosted
           </span>
         </v-expand-x-transition>
 
@@ -49,7 +58,7 @@
           Create an event
         </v-btn>
         <v-btn
-          v-if="showFeedbackBtn"
+          v-if="showFeedbackBtn && !selfHostedMode"
           id="feedback-btn"
           text
           href="https://forms.gle/A96i4TTWeKgH3P1W6"
@@ -59,7 +68,7 @@
           Give feedback
         </v-btn>
         <v-btn
-          v-if="!isPhone"
+          v-if="!isPhone && !selfHostedMode"
           text
           href="https://www.paypal.com/donate/?hosted_button_id=KWCH6LGJCP6E6"
           target="_blank"
@@ -294,6 +303,7 @@ export default {
       "enablePaywall",
       "upgradeDialogVisible",
       "newDialogOptions",
+      "selfHostedMode",
     ]),
     isPhone() {
       return isPhone(this.$vuetify)
@@ -334,6 +344,7 @@ export default {
       "showUpgradeDialog",
       "hideUpgradeDialog",
       "createNew",
+      "fetchConfig",
     ]),
     handleScroll(e) {
       this.scrollY = window.scrollY
@@ -410,6 +421,9 @@ export default {
   },
 
   async created() {
+    // Fetch server config (self-hosted mode settings)
+    this.fetchConfig()
+
     await get("/user/profile")
       .then((authUser) => {
         this.setAuthUser(authUser)
