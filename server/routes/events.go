@@ -633,12 +633,6 @@ func updateEventResponse(c *gin.Context) {
 		return
 	}
 
-	// If REQUIRE_AUTH_FOR_EVENTS is enabled, block guest responses
-	if os.Getenv("REQUIRE_AUTH_FOR_EVENTS") == "true" && *payload.Guest {
-		c.JSON(http.StatusUnauthorized, responses.Error{Error: errs.NotSignedIn})
-		return
-	}
-
 	eventResponses := db.GetEventResponses(event.Id.Hex())
 
 	var userIdString string
