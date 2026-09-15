@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.20-alpine AS build
+FROM golang:1.25-alpine AS build
 
 WORKDIR /app
 
@@ -19,12 +19,12 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o server .
 
 # Production stage
-FROM alpine:latest
+FROM alpine:3.23
 
 WORKDIR /app
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates tzdata
+# Install ca-certificates for HTTPS requests and wget for healthchecks
+RUN apk --no-cache add ca-certificates tzdata wget
 
 # Create non-root user
 RUN adduser -D -g '' appuser
@@ -36,7 +36,7 @@ COPY --from=build /app/server .
 # COPY --from=build /app/templates ./templates
 
 # Change ownership to non-root user
-RUN chown -R appuser:appuser /app
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser

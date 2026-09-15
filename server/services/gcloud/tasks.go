@@ -20,24 +20,26 @@ import (
 )
 
 var TasksClient *cloudtasks.Client
-var cloudTasksDisabled bool
 
 func InitTasks() func() {
 	// Check if cloud tasks should be disabled
 	if os.Getenv("DISABLE_CLOUD_TASKS") == "true" {
-		cloudTasksDisabled = true
 		fmt.Println("[INFO] Cloud Tasks disabled, email reminders will not be scheduled")
 		return func() {} // No-op cleanup
 	}
 
-	ctx := context.Background()
-
-	var err error
 	credsFile := os.Getenv("SERVICE_ACCOUNT_KEY_PATH")
+	if credsFile == "" || credsFile == "?" {
+		logger.StdOut.Println("SERVICE_ACCOUNT_KEY_PATH not set, Cloud Tasks disabled")
+		return func() {}
+	}
 
+	ctx := context.Background()
+	var err error
 	TasksClient, err = cloudtasks.NewClient(ctx, option.WithCredentialsFile(credsFile))
 	if err != nil {
-		logger.StdErr.Panicln(err)
+		logger.StdErr.Println("Failed to initialize Cloud Tasks:", err)
+		return func() {}
 	}
 
 	// Return function to close client
@@ -47,8 +49,8 @@ func InitTasks() func() {
 }
 
 func CreateEmailTask(email string, ownerName string, eventName string, eventId string) []string {
-	// Skip if cloud tasks are disabled
-	if cloudTasksDisabled {
+	if TasksClient == nil {
+		logger.StdErr.Println("WARNING: Cloud Tasks is disabled, skipping CreateEmailTask")
 		return []string{}
 	}
 
@@ -140,8 +142,8 @@ func CreateEmailTask(email string, ownerName string, eventName string, eventId s
 }
 
 func DeleteEmailTask(taskId string) {
-	// Skip if cloud tasks are disabled
-	if cloudTasksDisabled {
+	if TasksClient == nil {
+		logger.StdErr.Println("WARNING: Cloud Tasks is disabled, skipping DeleteEmailTask")
 		return
 	}
 

@@ -3,7 +3,14 @@ package routes
 
 import (
 	"context"
+	"crypto/rand"
+	"fmt"
+	"math/big"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -11,9 +18,11 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"schej.it/server/db"
+	"schej.it/server/errs"
 	"schej.it/server/logger"
 	"schej.it/server/middleware"
 	"schej.it/server/models"
+	"schej.it/server/responses"
 	"schej.it/server/services/auth"
 	"schej.it/server/services/calendar"
 	"schej.it/server/services/listmonk"
@@ -28,6 +37,10 @@ func InitAuth(router *gin.RouterGroup) {
 	authRouter.POST("/sign-in-mobile", signInMobile)
 	authRouter.POST("/sign-out", signOut)
 	authRouter.GET("/status", middleware.AuthRequired(), getStatus)
+
+	authRouter.POST("/otp/check-email", checkEmail)
+	authRouter.POST("/otp/send", sendOtp)
+	authRouter.POST("/otp/verify", verifyOtp)
 }
 
 // @Summary Signs user in
@@ -52,7 +65,11 @@ func signIn(c *gin.Context) {
 
 	tokens := auth.GetTokensFromAuthCode(payload.Code, payload.Scope, utils.GetOrigin(c), payload.CalendarType)
 
-	user := signInHelper(c, tokens, models.WEB, payload.CalendarType, *payload.TimezoneOffset)
+	user, err := signInHelper(c, tokens, models.WEB, payload.CalendarType, *payload.TimezoneOffset)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, responses.Error{Error: errs.InvalidIdToken})
+		return
+	}
 
 	// Link events to user
 	for _, eventIdString := range payload.EventsToLink {
@@ -88,7 +105,7 @@ func signInMobile(c *gin.Context) {
 		return
 	}
 
-	signInHelper(
+	_, err := signInHelper(
 		c,
 		auth.TokenResponse{
 			AccessToken:  payload.AccessToken,
@@ -101,12 +118,16 @@ func signInMobile(c *gin.Context) {
 		payload.CalendarType,
 		payload.TimezoneOffset,
 	)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, responses.Error{Error: errs.InvalidIdToken})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{})
 }
 
 // Helper function to sign user in with the given parameters from the google oauth route
-func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.TokenOriginType, calendarType models.CalendarType, timezoneOffset int) models.User {
+func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.TokenOriginType, calendarType models.CalendarType, timezoneOffset int) (models.User, error) {
 	// Get access token expire time
 	accessTokenExpireDate := utils.GetAccessTokenExpireDate(token.ExpiresIn)
 
@@ -120,12 +141,26 @@ func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.T
 
 	var email, firstName, lastName, picture string
 	if calendarType == models.GoogleCalendarType {
-		// Get user info from JWT
-		claims := utils.ParseJWT(token.IdToken)
-		email, _ = claims.GetStr("email")
-		firstName, _ = claims.GetStr("given_name")
-		lastName, _ = claims.GetStr("family_name")
-		picture, _ = claims.GetStr("picture")
+		// Verify the ID token before trusting any of its claims. The id token
+		// can be supplied directly by the client (e.g. the mobile sign-in
+		// endpoint), so decoding it without verifying the signature, audience,
+		// and issuer would let an attacker forge an identity and sign in as
+		// any user. We accept any of our configured client IDs (web/iOS/
+		// Android) as a valid audience.
+		allowedAuds := []string{
+			os.Getenv("CLIENT_ID"),
+			os.Getenv("IOS_CLIENT_ID"),
+			os.Getenv("ANDROID_CLIENT_ID"),
+		}
+		info, err := auth.VerifyGoogleIdToken(token.IdToken, allowedAuds)
+		if err != nil {
+			logger.StdErr.Printf("Failed to verify Google ID token: %v", err)
+			return models.User{}, err
+		}
+		email = info.Email
+		firstName = info.GivenName
+		lastName = info.FamilyName
+		picture = info.Picture
 	} else if calendarType == models.OutlookCalendarType {
 		// Get user info from microsoft graph
 		userInfo := microsoftgraph.GetUserInfo(nil, &calendarAuth)
@@ -134,6 +169,7 @@ func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.T
 		lastName = userInfo.LastName
 		picture = ""
 	}
+	email = utils.NormalizeEmail(email)
 
 	primaryAccountKey := utils.GetCalendarAccountKey(email, calendarType)
 
@@ -158,12 +194,12 @@ func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.T
 		Picture: picture,
 		Enabled: utils.TruePtr(), // Workaround to pass a boolean pointer
 	}
-	calendarAccountKey := utils.GetCalendarAccountKey(email, calendarType)
+	canonicalKey := utils.GetCalendarAccountKey(email, calendarType)
 
 	var userId primitive.ObjectID
-	findResult := db.UsersCollection.FindOne(context.Background(), bson.M{"email": email})
+	existing := db.GetUserByEmail(email)
 	// If user doesn't exist, create a new user
-	if findResult.Err() == mongo.ErrNoDocuments {
+	if existing == nil {
 		// Fetch subcalendars
 		subCalendars, err := calendar.GetCalendarProvider(calendarAccount).GetCalendarList()
 		if err == nil {
@@ -172,7 +208,7 @@ func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.T
 
 		// Set calendar accounts
 		userData.CalendarAccounts = map[string]models.CalendarAccount{
-			calendarAccountKey: calendarAccount,
+			canonicalKey: calendarAccount,
 		}
 
 		// Create user
@@ -185,10 +221,7 @@ func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.T
 
 		// slackbot.SendTextMessage(fmt.Sprintf(":wave: %s %s (%s) has joined schej.it!", firstName, lastName, email))
 	} else {
-		var user models.User
-		if err := findResult.Decode(&user); err != nil {
-			logger.StdErr.Panicln(err)
-		}
+		user := existing
 		userId = user.Id
 
 		// If user has custom name, do not override first name and last name
@@ -197,9 +230,34 @@ func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.T
 			userData.LastName = ""
 		}
 
-		// Set subcalendars map based on whether calendar account already exists
-		if oldCalendarAccount, ok := user.CalendarAccounts[calendarAccountKey]; ok && oldCalendarAccount.SubCalendars != nil {
-			calendarAccount.SubCalendars = oldCalendarAccount.SubCalendars
+		legacyKey := utils.ActualCalendarAccountMapKey(user, email, calendarType)
+
+		var oldSubCalendars *map[string]models.SubCalendar
+		if legacyKey != "" {
+			if oldAcc, ok := user.CalendarAccounts[legacyKey]; ok && oldAcc.SubCalendars != nil {
+				oldSubCalendars = oldAcc.SubCalendars
+			}
+		} else if user.CalendarAccounts != nil {
+			if existingAcc, ok := user.CalendarAccounts[canonicalKey]; ok && existingAcc.SubCalendars != nil {
+				oldSubCalendars = existingAcc.SubCalendars
+			}
+		}
+
+		var calAccounts map[string]models.CalendarAccount
+		if user.CalendarAccounts == nil {
+			calAccounts = make(map[string]models.CalendarAccount)
+		} else {
+			calAccounts = make(map[string]models.CalendarAccount, len(user.CalendarAccounts))
+			for k, v := range user.CalendarAccounts {
+				calAccounts[k] = v
+			}
+		}
+		if legacyKey != "" && legacyKey != canonicalKey {
+			delete(calAccounts, legacyKey)
+		}
+
+		if oldSubCalendars != nil {
+			calendarAccount.SubCalendars = oldSubCalendars
 		} else {
 			subCalendars, err := calendar.GetCalendarProvider(calendarAccount).GetCalendarList()
 			if err == nil {
@@ -207,9 +265,9 @@ func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.T
 			}
 		}
 
-		// Set calendar account
-		userData.CalendarAccounts = user.CalendarAccounts
-		userData.CalendarAccounts[calendarAccountKey] = calendarAccount
+		calAccounts[canonicalKey] = calendarAccount
+		userData.CalendarAccounts = calAccounts
+		userData.Email = email
 
 		// Update user if exists
 		_, err := db.UsersCollection.UpdateByID(
@@ -234,7 +292,7 @@ func signInHelper(c *gin.Context, token auth.TokenResponse, tokenOrigin models.T
 	session.Save()
 
 	userData.Id = userId
-	return userData
+	return userData, nil
 }
 
 // @Summary Signs user out
@@ -261,4 +319,173 @@ func signOut(c *gin.Context) {
 // @Router /auth/status [get]
 func getStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
+}
+
+func generateOtpCode() string {
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		logger.StdErr.Panicln(err)
+	}
+	return fmt.Sprintf("%06d", n.Int64())
+}
+
+// @Summary Checks whether a user with the given email exists
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param payload body object{email=string} true "Email to check"
+// @Success 200
+// @Router /auth/otp/check-email [post]
+func checkEmail(c *gin.Context) {
+	payload := struct {
+		Email string `json:"email" binding:"required"`
+	}{}
+	if err := c.BindJSON(&payload); err != nil {
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(payload.Email))
+	isNewUser := db.GetUserByEmail(email) == nil
+
+	c.JSON(http.StatusOK, gin.H{"isNewUser": isNewUser})
+}
+
+// @Summary Sends an OTP code to the given email
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param payload body object{email=string} true "Email to send OTP to"
+// @Success 200
+// @Router /auth/otp/send [post]
+func sendOtp(c *gin.Context) {
+	payload := struct {
+		Email string `json:"email" binding:"required"`
+	}{}
+	if err := c.BindJSON(&payload); err != nil {
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(payload.Email))
+
+	// Delete any existing OTP codes for this email
+	db.OtpCodesCollection.DeleteMany(context.Background(), bson.M{"email": email})
+
+	code := generateOtpCode()
+	otpDoc := models.OtpCode{
+		Email:     email,
+		Code:      code,
+		ExpiresAt: time.Now().Add(10 * time.Minute),
+		Attempts:  0,
+	}
+
+	_, err := db.OtpCodesCollection.InsertOne(context.Background(), otpDoc)
+	if err != nil {
+		logger.StdErr.Panicln(err)
+	}
+
+	otpTemplateId, err := strconv.Atoi(os.Getenv("LISTMONK_OTP_EMAIL_TEMPLATE_ID"))
+	if err != nil {
+		logger.StdErr.Panicln("LISTMONK_OTP_EMAIL_TEMPLATE_ID is not set or invalid")
+	}
+
+	listmonk.SendEmailAddSubscriberIfNotExist(email, otpTemplateId, bson.M{
+		"code": code,
+	}, false, "Timeful <noreply@timeful.app>")
+
+	c.JSON(http.StatusOK, gin.H{})
+}
+
+// @Summary Verifies an OTP code and signs the user in
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param payload body object{email=string,code=string,timezoneOffset=int} true "Email, OTP code, and timezone offset"
+// @Success 200
+// @Router /auth/otp/verify [post]
+func verifyOtp(c *gin.Context) {
+	payload := struct {
+		Email          string `json:"email" binding:"required"`
+		Code           string `json:"code" binding:"required"`
+		TimezoneOffset *int   `json:"timezoneOffset" binding:"required"`
+		FirstName      string `json:"firstName"`
+		LastName       string `json:"lastName"`
+	}{}
+	if err := c.BindJSON(&payload); err != nil {
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(payload.Email))
+
+	// Find the OTP document
+	var otpDoc models.OtpCode
+	err := db.OtpCodesCollection.FindOne(context.Background(), bson.M{
+		"email":     email,
+		"expiresAt": bson.M{"$gt": time.Now()},
+	}).Decode(&otpDoc)
+
+	if err == mongo.ErrNoDocuments {
+		c.JSON(http.StatusBadRequest, responses.Error{Error: errs.OtpExpired})
+		return
+	} else if err != nil {
+		logger.StdErr.Panicln(err)
+	}
+
+	// Rate-limit: max 5 attempts per code
+	if otpDoc.Attempts >= 5 {
+		db.OtpCodesCollection.DeleteOne(context.Background(), bson.M{"_id": otpDoc.Id})
+		c.JSON(http.StatusTooManyRequests, responses.Error{Error: errs.OtpTooManyAttempts})
+		return
+	}
+
+	// Increment attempts
+	db.OtpCodesCollection.UpdateByID(context.Background(), otpDoc.Id, bson.M{
+		"$inc": bson.M{"attempts": 1},
+	})
+
+	if otpDoc.Code != payload.Code {
+		c.JSON(http.StatusBadRequest, responses.Error{Error: errs.OtpInvalidCode})
+		return
+	}
+
+	// OTP verified — delete it
+	db.OtpCodesCollection.DeleteOne(context.Background(), bson.M{"_id": otpDoc.Id})
+
+	// Find or create user
+	var userId primitive.ObjectID
+	existing := db.GetUserByEmail(email)
+
+	if existing == nil {
+		firstName := strings.TrimSpace(payload.FirstName)
+		lastName := strings.TrimSpace(payload.LastName)
+
+		userData := models.User{
+			Email:          email,
+			FirstName:      firstName,
+			LastName:       lastName,
+			TimezoneOffset: *payload.TimezoneOffset,
+			TokenOrigin:    models.WEB,
+		}
+
+		res, err := db.UsersCollection.InsertOne(context.Background(), userData)
+		if err != nil {
+			logger.StdErr.Panicln(err)
+		}
+		userId = res.InsertedID.(primitive.ObjectID)
+
+		if exists, listmonkUserId := listmonk.DoesUserExist(email); exists {
+			listmonk.AddUserToListmonk(email, firstName, lastName, "", listmonkUserId, true)
+		} else {
+			listmonk.AddUserToListmonk(email, firstName, lastName, "", nil, true)
+		}
+	} else {
+		userId = existing.Id
+	}
+
+	// Set session — same mechanism as OAuth sign-in
+	session := sessions.Default(c)
+	session.Set("userId", userId.Hex())
+	session.Save()
+
+	user := db.GetUserById(userId.Hex())
+	c.JSON(http.StatusOK, user)
 }

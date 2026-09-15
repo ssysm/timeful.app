@@ -1,17 +1,34 @@
-.git
-.gitignore
+# Dependencies
+vendor/
+
+# Build outputs
+server
+*.exe
+
+# Environment files
 .env
 .env.*
 !.env.example
-*.md
-.DS_Store
-.vscode
-.idea
+!.env.template
+
+# Logs
 *.log
+logs/
 logs.log
-# Exclude binary artifacts
-server
-*.exe
+
+# Git / docs / IDE
+.git
+.gitignore
+*.md
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
 # Test files
 *_test.go
 # Note: docs/ is required for swagger - do not exclude it

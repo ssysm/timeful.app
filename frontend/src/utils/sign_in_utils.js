@@ -49,7 +49,8 @@ export const signInOutlook = ({
   state = {},
   requestCalendarPermission = false,
 }) => {
-  const clientId = process.env.VUE_APP_OUTLOOK_CLIENT_ID
+  const clientId =
+    process.env.VUE_APP_OUTLOOK_CLIENT_ID || process.env.VUE_APP_MICROSOFT_CLIENT_ID
   const tenant = "common"
   const redirectUri = encodeURIComponent(`${window.location.origin}/auth`)
 

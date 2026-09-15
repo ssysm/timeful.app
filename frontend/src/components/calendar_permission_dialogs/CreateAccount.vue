@@ -64,7 +64,7 @@ export default {
   },
 
   computed: {
-    ...mapState(["authUser"]),
+    ...mapState(["authUser", "selfHostedMode"]),
   },
 }
 </script>

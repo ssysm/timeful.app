@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -78,7 +79,10 @@ func DoesUserExist(email string) (bool, *int) {
 	username := os.Getenv("LISTMONK_USERNAME")
 	password := os.Getenv("LISTMONK_PASSWORD")
 
-	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/subscribers?query=subscribers.email='%s'", url, email), nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/subscribers", url), nil)
+	q := req.URL.Query()
+	q.Set("query", fmt.Sprintf("subscribers.email='%s'", email))
+	req.URL.RawQuery = q.Encode()
 	req.SetBasicAuth(username, password)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -89,6 +93,16 @@ func DoesUserExist(email string) (bool, *int) {
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.StdErr.Println(err)
+		return false, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		logger.StdErr.Printf("listmonk DoesUserExist returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		return false, nil
+	}
+
 	var response struct {
 		Data struct {
 			Results []struct {
@@ -96,7 +110,7 @@ func DoesUserExist(email string) (bool, *int) {
 			} `json:"results"`
 		} `json:"data"`
 	}
-	err = json.NewDecoder(resp.Body).Decode(&response)
+	err = json.Unmarshal(bodyBytes, &response)
 	if err != nil {
 		logger.StdErr.Println(err)
 		return false, nil
@@ -109,8 +123,9 @@ func DoesUserExist(email string) (bool, *int) {
 	}
 }
 
-// Send a transactional email using the specified template and data
-func SendEmail(email string, templateId int, data bson.M) {
+// Send a transactional email using the specified template and data.
+// fromEmail is optional; if non-empty, overrides the default sender address.
+func SendEmail(email string, templateId int, data bson.M, fromEmail ...string) {
 	if os.Getenv("LISTMONK_ENABLED") == "false" {
 		return
 	}
@@ -121,12 +136,16 @@ func SendEmail(email string, templateId int, data bson.M) {
 	listmonkPassword := os.Getenv("LISTMONK_PASSWORD")
 
 	// Construct body
-	body, err := json.Marshal(bson.M{
+	payload := bson.M{
 		"subscriber_email": email,
 		"template_id":      templateId,
 		"data":             data,
 		"content_type":     "html",
-	})
+	}
+	if len(fromEmail) > 0 && fromEmail[0] != "" {
+		payload["from_email"] = fromEmail[0]
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		logger.StdErr.Println(err)
 		return
@@ -141,12 +160,13 @@ func SendEmail(email string, templateId int, data bson.M) {
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		logger.StdErr.Println(err)
+		return
 	}
 	defer response.Body.Close()
 }
 
 // Send a transactional email using the specified template and data. Adds subscriber if they don't exist
-func SendEmailAddSubscriberIfNotExist(email string, templateId int, data bson.M, sendMarketingEmails bool) {
+func SendEmailAddSubscriberIfNotExist(email string, templateId int, data bson.M, sendMarketingEmails bool, fromEmail ...string) {
 	if os.Getenv("LISTMONK_ENABLED") == "false" {
 		return
 	}
@@ -155,5 +175,5 @@ func SendEmailAddSubscriberIfNotExist(email string, templateId int, data bson.M,
 		AddUserToListmonk(email, "", "", "", nil, sendMarketingEmails)
 	}
 
-	SendEmail(email, templateId, data)
+	SendEmail(email, templateId, data, fromEmail...)
 }

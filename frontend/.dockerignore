@@ -1,16 +1,35 @@
+# Dependencies
+node_modules/
 node_modules
+
+# Build outputs
+dist/
 dist
-.git
-.gitignore
+
+# Environment files
 .env
 .env.*
 !.env.example
-*.md
-.DS_Store
-.vscode
-.idea
+!.env.template
+
+# Logs
 *.log
 npm-debug.log*
-.npm
-coverage
+
+# Git / docs / IDE
+.git
+.gitignore
+*.md
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
 .nyc_output
+.npm

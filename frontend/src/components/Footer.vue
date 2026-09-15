@@ -75,9 +75,6 @@
             <router-link v-if="!selfHostedMode" :to="{ name: 'privacy-policy' }" class="tw-text-sm">
               Privacy Policy
             </router-link>
-            <router-link :to="{ name: 'cookie-settings' }" class="tw-text-sm">
-              Cookie Preferences
-            </router-link>
           </div>
         </div>
         <!-- Links -->
@@ -163,6 +160,12 @@
             >
           </div>
         </div>
+      </div>
+      <div
+        class="tw-mt-8 tw-border-t tw-border-white/20 tw-pt-4 tw-text-sm tw-text-white/80"
+      >
+        &copy; {{ new Date().getFullYear() }} Liu Laboratories LLC. All rights
+        reserved.
       </div>
     </div>
   </footer>

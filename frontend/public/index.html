@@ -43,21 +43,6 @@
     />
   </head>
   <body>
-    <!-- Google Tag Manager (noscript) -->
-    <script>
-      try {
-        const consent = localStorage.getItem("cookieConsent")
-        const consentData = consent ? JSON.parse(consent) : null
-        if (consentData?.preferences?.analytics) {
-          document.write(
-            '<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-M677X6V" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>'
-          )
-        }
-      } catch (error) {
-        // Silent fail for noscript GTM
-      }
-    </script>
-    <!-- End Google Tag Manager (noscript) -->
     <noscript>
       <strong
         >We're sorry but <%= htmlWebpackPlugin.options.title %> doesn't work
